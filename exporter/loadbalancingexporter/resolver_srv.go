@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,10 +19,9 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// TODO: What is this?
 var _ resolver = (*srvResolver)(nil)
 
-// TODO: Should these be moved to somethingl ike resolver_common.go?
+// TODO: Should these be moved to something like resolver_common.go?
 // const (
 // 	defaultResInterval = 5 * time.Second
 // 	defaultResTimeout  = time.Second
@@ -57,6 +57,16 @@ type srvResolver struct {
 	updateLock         sync.Mutex
 	shutdownWg         sync.WaitGroup
 	changeCallbackLock sync.RWMutex
+}
+
+type backendsWithIPs struct {
+  targets []backendWithIPs
+}
+
+type backendWithIPs struct {
+  ips []string
+  port string
+  target string
 }
 
 type multiResolver interface {
@@ -148,23 +158,24 @@ func (r *srvResolver) resolve(ctx context.Context) ([]string, error) {
 	_ = stats.RecordWithTags(ctx, srvResolverSuccessTrueMutators, mNumResolutions.M(1))
 
 	// backendsWithIPs tracks the IP addresses for changes
-	backendsWithIPs := make(map[string]string)
+	backendsWithIPs := &backendsWithIPs{}
+
 	for _, srv := range srvs {
 		target := strings.TrimSuffix(srv.Target, ".")
-		backendsWithIPs[target] = ""
+    port := strconv.FormatUint(uint64(srv.Port), 10)
+		backendsWithIPs.targets = append(backendsWithIPs.targets, backendWithIPs{
+      port: port,
+      target: target,
+    })
 	}
 	// backends is what we use to compare against the current endpoints
 	var backends []string
 
 	// Lookup the IP addresses for the A records
-	for aRec := range backendsWithIPs {
+	for _, aRec := range backendsWithIPs.targets {
 
 		// handle backends first
-		backend := aRec
-		// if a port is specified in the configuration, add it
-		if r.port != "" {
-			backend = fmt.Sprintf("%s:%s", backend, r.port)
-		}
+    backend := fmt.Sprintf("%s:%s", aRec.target, aRec.port)
 		backends = append(backends, backend)
 
 		ips, err := r.resolver.LookupIPAddr(ctx, aRec)

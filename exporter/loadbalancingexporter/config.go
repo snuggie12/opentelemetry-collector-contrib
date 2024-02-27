@@ -57,11 +57,10 @@ type K8sSvcResolver struct {
 	Ports   []int32 `mapstructure:"ports"`
 }
 
-// TODO: Should a common struct be used for dns-based resolvers?
+// TODO: Make a common struct to be used for dns-based resolvers
 // SRVResolver defines the configuration for the DNS resolver of SRV records for headless Services
 type SRVResolver struct {
 	Hostname string        `mapstructure:"hostname"`
-	Port     string        `mapstructure:"port"`
 	Interval time.Duration `mapstructure:"interval"`
 	Timeout  time.Duration `mapstructure:"timeout"`
 }
