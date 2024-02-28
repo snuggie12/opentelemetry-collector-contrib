@@ -165,24 +165,30 @@ func (r *dnssrvnoaResolver) resolve(ctx context.Context) ([]string, error) {
 	var freshBackends []string
 
 	// Lookup the IP addresses for the A records
-	for aRec, port := range backendsWithInfo {
+	for aRec := range backendsWithInfo {
 
 		// handle backends first
-		backend := fmt.Sprintf("%s:%s", aRec, port)
+		backend := fmt.Sprintf("%s:%s", aRec, backendsWithInfo[aRec])
 		backends = append(backends, backend)
+
+    backendsWithInfo[aRec] = ""
 
 		ips, err := r.resolver.LookupIPAddr(ctx, aRec)
 		// Return the A record. If we can't resolve them, we'll try again next iteration
 		if err != nil {
+      r.logger.Warn("failed to resolve A record", zap.String("A record", aRec), zap.Error(err))
 			_ = stats.RecordWithTags(ctx, dnssrvnoaResolverSuccessFalseMutators, mNumResolutions.M(1))
 			continue
 		}
+    _ = stats.RecordWithTags(ctx, dnssrvnoaResolverSuccessTrueMutators, mNumResolutions.M(1))
+
 		// A headless Service SRV target only returns 1 IP address for its A record
 		if len(ips) > 1 {
 			return nil, errNotSingleIP
 		}
 
 		ip := ips[0]
+    r.logger.Debug("IP address", zap.String("IP", ip.String()), zap.String("A record", aRec))
 		if ip.IP.To4() != nil {
 			backendsWithInfo[aRec] = ip.String()
 		} else {
@@ -203,6 +209,10 @@ func (r *dnssrvnoaResolver) resolve(ctx context.Context) ([]string, error) {
 	// keep both in the same order
 	slices.Sort(freshBackends)
 	slices.Sort(backends)
+
+  // REMOVE before committing
+  r.logger.Debug("backend info", zap.Strings("backends", backends), zap.Any("backends with IPs", backendsWithInfo), zap.Strings("fresh backends", freshBackends))
+  r.logger.Debug("old endpoint info", zap.Strings("old endpoints", r.endpoints), zap.Any("old endpoints with IPs", r.endpointsWithIPs))
 
 	if equalStringSlice(r.endpoints, freshBackends) {
 		r.logger.Debug("No change in endpoints")
